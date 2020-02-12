@@ -1,0 +1,21 @@
+- name: Renew Vault token
+  shell: "vault token renew > /dev/null"
+  environment:
+    VAULT_TOKEN: "{{ vault_token }}"
+    VAULT_ADDR: "{{ vault_addr }}"
+
+- name: Remove SSH private key
+  shell: "sudo rm -f ~/.ssh/id_rsa"
+
+- name: Get SSH private key from Vault
+  shell: "vault kv get -format=json {{ vault_secret_base_path }}/ssh | jq -r .data.id_rsa > ~/.ssh/id_rsa"
+  environment:
+    VAULT_TOKEN: "{{ vault_token }}"
+    VAULT_ADDR: "{{ vault_addr }}"
+
+- name: Set correct permissions on SSH private key
+  shell: "chmod 400 ~/.ssh/id_rsa"
+
+- name: Disable strict host checking
+  shell: "echo \"Host *\" > ~/.ssh/config && echo \"  StrictHostKeyChecking no\" >> ~/.ssh/config"
+

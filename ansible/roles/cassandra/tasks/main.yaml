@@ -1,0 +1,11 @@
+- name: Create namespace
+  import_tasks: namespace.yaml
+
+- name: Configure kube-dns
+  import_tasks: kube-dns.yaml
+
+- name: Cassandra config
+  import_tasks: cassandra-config.yaml
+
+- name: Deploy statefulset
+  import_tasks: statefulset.yaml

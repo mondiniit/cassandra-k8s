@@ -1,0 +1,119 @@
+- name: Copy template to bastion
+  copy:
+    src: cluster.tmpl
+    dest: "/home/{{ ansible_user }}/cluster.tmpl"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: 0644
+
+- name: Create cluster config file by consul-template
+  shell: "consul-template -template \"cluster.tmpl:{{ item.filename }}\" -once -log-level debug -syslog"
+  environment:
+    CONSUL_HTTP_ADDR: "{{ consul_http_addr }}"
+    CONSUL_HTTP_TOKEN: "{{ consul_http_token }}"
+    CONSUL_HTTP_SSL: "{{ consul_http_ssl }}"
+    REGION: "{{ item.region }}"
+    ENVIRONMENT: "{{ env }}"
+    CLUSTER_NAME: "{{ cluster_name }}"
+    NAME_SUFFIX: "{{ item.name_suffix }}"
+    AZURE_TENANT: "{{ azure_tenant }}"
+    AZURE_SUBSCRIPTION_ID: "{{ azure_subscription_id }}"
+    AZURE_CLIENT_ID: "{{ azure_client_id }}"
+    AZURE_SECRET: "{{ azure_secret }}"
+    KUBERNETES_VERSION: "{{ kubernetes_version }}"
+    SERVICE_CLUSTER_IP_RANGE: "{{ item.service_cluster_cidr }}"
+    CLUSTER_CIDR: "{{ item.cluster_cidr }}"
+    CLUSTER_DNS_SERVER: "{{ item.cluster_dns_server }}"
+  with_items:
+    - { filename: "cluster_a.yml", region: "{{ regions.split(',')[0] }}", service_cluster_cidr: "{{ service_cluster_ip_ranges.split(',')[0] }}", cluster_cidr: "{{ cluster_cidrs.split(',')[0] }}", cluster_dns_server: "{{ cluster_dns_servers.split(',')[0] }}", name_suffix: "{{ name_suffixes.split(',')[0] }}" }
+    - { filename: "cluster_b.yml", region: "{{ regions.split(',')[1] }}", service_cluster_cidr: "{{ service_cluster_ip_ranges.split(',')[1] }}", cluster_cidr: "{{ cluster_cidrs.split(',')[1] }}", cluster_dns_server: "{{ cluster_dns_servers.split(',')[1] }}", name_suffix: "{{ name_suffixes.split(',')[1] }}" }
+
+- name: Cluster creation and output config file
+  shell: "rke up --config {{ item.filename }}; consul kv put {{ cluster_name }}-k8s/{{ env }}/output/kube-config-cluster-{{ item.region }} @kube_config_{{ item.filename }}"
+  environment:
+    CONSUL_HTTP_ADDR: "{{ consul_http_addr }}"
+    CONSUL_HTTP_TOKEN: "{{ consul_http_token }}"
+    CONSUL_HTTP_SSL: "{{ consul_http_ssl }}"
+  with_items:
+    - { filename: "cluster_a.yml", region: "{{ regions.split(',')[0] }}" }
+    - { filename: "cluster_b.yml", region: "{{ regions.split(',')[1] }}" }
+
+- name: Create .kube directory
+  file:
+    path: "/home/{{ ansible_user }}/.kube"
+    state: directory
+    mode: 0755
+
+- name: Move kubeconfig as default
+  shell: "KUBECONFIG=kube_config_cluster_a.yml:kube_config_cluster_b.yml kubectl config view --flatten > ~/.kube/config"
+
+- name: Delete consul secret if exists
+  shell: "kubectl --context {{ item }} -n kube-system get secret consul-config && kubectl --context {{ item }} -n kube-system delete secret consul-config || echo \"secret consul-config doesn't exists\""
+  with_items:
+    - "{{ cluster_name }}-{{ regions.split(',')[0] }}"
+    - "{{ cluster_name }}-{{ regions.split(',')[1] }}"
+
+- name: Create consul secret
+  shell: "kubectl --context {{ item }} -n kube-system create secret generic consul-config --from-literal \"addr={{ consul_http_addr }}\" --from-literal \"token={{ consul_http_token }}\""
+  with_items:
+    - "{{ cluster_name }}-{{ regions.split(',')[0] }}"
+    - "{{ cluster_name }}-{{ regions.split(',')[1] }}"
+
+- name: Create manifest for storage classes
+  copy:
+    dest: "/home/{{ ansible_user }}/azstorage-classes.yaml"
+    content: |
+      kind: StorageClass
+      apiVersion: storage.k8s.io/v1
+      metadata:
+        name: premium
+      provisioner: kubernetes.io/azure-disk
+      parameters:
+        storageaccounttype: Premium_LRS
+        kind: Managed
+      ---
+      kind: StorageClass
+      apiVersion: storage.k8s.io/v1
+      metadata:
+        name: standard
+      provisioner: kubernetes.io/azure-disk
+      parameters:
+        storageaccounttype: Standard_LRS
+        kind: Managed
+
+- name: Create storage classes resources
+  shell: "kubectl --context {{ item }} apply -f azstorage-classes.yaml"
+  with_items:
+    - "{{ cluster_name }}-{{ regions.split(',')[0] }}"
+    - "{{ cluster_name }}-{{ regions.split(',')[1] }}"
+
+- name: Define default storage class
+  shell: "kubectl --context {{ item }} patch storageclass premium -p '{\"metadata\": {\"annotations\":{\"storageclass.kubernetes.io/is-default-class\":\"true\"}}}'"
+  with_items:
+    - "{{ cluster_name }}-{{ regions.split(',')[0] }}"
+    - "{{ cluster_name }}-{{ regions.split(',')[1] }}"
+
+- name: Store nodes pod CIDR on Consul
+  shell: |
+    kubectl --context {{ item.context }} get nodes -o json | jq '.items[].spec | select(.providerID | contains("worker")) | .podCIDR' | tr '\n' ',' | sed 's/.$//' | sed 's/"//g'> node-pod-cidr-{{ item.region }}
+    consul kv put {{ cluster_name }}-k8s/{{ env }}/output/node-pod-cidr-{{ item.region }} @node-pod-cidr-{{ item.region }}
+    rm node-pod-cidr-{{ item.region }}
+  with_items:
+    - { context: "{{ cluster_name }}-{{ regions.split(',')[0] }}", region: "{{ regions.split(',')[0] }}" }
+    - { context: "{{ cluster_name }}-{{ regions.split(',')[1] }}", region: "{{ regions.split(',')[1] }}" }
+  environment:
+    CONSUL_HTTP_ADDR: "{{ consul_http_addr }}"
+    CONSUL_HTTP_TOKEN: "{{ consul_http_token }}"
+    CONSUL_HTTP_SSL: "{{ consul_http_ssl }}"
+
+- name: Clean up working files
+  file:
+    path: "{{ item }}"
+    state: absent
+  with_items:
+    - cluster.tmpl
+    - cluster_a.yml
+    - cluster_b.yml
+    - kube_config_cluster_a.yml
+    - kube_config_cluster_b.yml
+    - azstorage-classes.yaml

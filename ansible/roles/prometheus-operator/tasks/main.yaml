@@ -1,0 +1,53 @@
+- name: Copy prometheus operator deployment
+  copy:
+    dest: "/home/{{ ansible_user }}/prometheus-deployment-{{ item.region }}.yaml"
+    content: |
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: monitoring
+      ---
+      apiVersion: flux.weave.works/v1beta1
+      kind: HelmRelease
+      metadata:
+        name: prometheus
+        namespace: monitoring
+      spec:
+        releaseName: prometheus-operator
+        chart:
+          repository: https://kubernetes-charts.storage.googleapis.com/
+          name: prometheus-operator
+          version: 5.7.0
+        values:
+          prometheus:
+            prometheusSpec:
+              storageSpec:
+                volumeClaimTemplate:
+                  spec:
+                    storageClassName: premium
+                    resources:
+                      requests:
+                        storage: 50Gi
+          grafana:
+            enabled: true
+          coreDns:
+            enabled: false
+          kubeDns:
+            enabled: true
+  with_items:
+    - { region: "{{ regions.split(',')[0] }}", name_suffix: "{{ name_suffixes.split(',')[0] }}" }
+    - { region: "{{ regions.split(',')[1] }}", name_suffix: "{{ name_suffixes.split(',')[1] }}" }
+
+- name: Create prometheus operator deployment
+  shell: "kubectl --context {{ item.context }} apply -f prometheus-deployment-{{ item.region }}.yaml"
+  with_items:
+    - { context: "{{ cluster_name }}-{{ regions.split(',')[0] }}", region: "{{ regions.split(',')[0] }}" }
+    - { context: "{{ cluster_name }}-{{ regions.split(',')[1] }}", region: "{{ regions.split(',')[1] }}" }
+
+- name: Clean up working files
+  file:
+    path: "{{ item }}"
+    state: absent
+  with_items:
+    - prometheus-deployment-{{ regions.split(',')[0] }}.yaml
+    - prometheus-deployment-{{ regions.split(',')[1] }}.yaml

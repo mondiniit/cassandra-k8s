@@ -1,0 +1,365 @@
+pipeline:
+
+  ssh_keygen_staging:
+    group: ssh_keygen
+    pull: true
+    image: my_hostname.azurecr.io/drone-ssh-keygen:latest
+    vault_ssh_secret_path: secret/underworld/k8s-clusters/cassandra/staging/ssh
+    environment:
+      - VAULT_ADDR=https://vault.tools.my_hostname.cl
+    secrets:
+      - source: vault_token
+        target: VAULT_TOKEN
+
+  ssh_keygen_production:
+    group: ssh_keygen
+    pull: true
+    image: my_hostname.azurecr.io/drone-ssh-keygen:latest
+    vault_ssh_secret_path: secret/underworld/k8s-clusters/cassandra/production/ssh
+    environment:
+      - VAULT_ADDR=https://vault.tools.my_hostname.cl
+    secrets:
+      - source: vault_token
+        target: VAULT_TOKEN
+
+  infrastructure_staging:
+    image: jmccann/drone-terraform:6.0-0.12.6
+    actions:
+      - plan
+      - apply
+    sensitive: true
+    root_dir: infrastructure
+    init_options:
+      backend-config:
+        - "scheme=https"
+        - "path=cassandra-k8s/staging/terraform/infrastructure/terraform-state"
+        - "datacenter=eastus2"
+    vars:
+      consul_base_path: cassandra-k8s/staging
+      email: chin.dou@walmart.com
+      vault_cloudflare_apikey_path: secret/underworld/cloudflare
+      vault_secret_base_path: secret/underworld/k8s-clusters/cassandra/staging
+    environment:
+      - VAULT_ADDR=https://vault.tools.my_hostname.cl
+      - CONSUL_HTTP_ADDR=consul.tools.my_hostname.cl
+      - CONSUL_HTTP_SSL=true
+    secrets:
+      - source: vault_token
+        target: VAULT_TOKEN
+      - source: consul_http_token
+        target: CONSUL_HTTP_TOKEN
+      - source: azure_tenant
+        target: ARM_TENANT_ID
+      - source: azure_subscription
+        target: ARM_SUBSCRIPTION_ID
+      - source: azure_client
+        target: ARM_CLIENT_ID
+      - source: azure_secret
+        target: ARM_CLIENT_SECRET
+
+  infrastructure_production:
+    image: jmccann/drone-terraform:6.0-0.12.6
+    actions:
+      - plan
+      - apply
+    sensitive: true
+    root_dir: infrastructure
+    init_options:
+      backend-config:
+        - "scheme=https"
+        - "path=cassandra-k8s/production/terraform/infrastructure/terraform-state"
+        - "datacenter=eastus2"
+    vars:
+      consul_base_path: cassandra-k8s/production
+      email: chin.dou@walmart.com
+      vault_cloudflare_apikey_path: secret/underworld/cloudflare
+      vault_secret_base_path: secret/underworld/k8s-clusters/cassandra/production
+    environment:
+      - VAULT_ADDR=https://vault.tools.my_hostname.cl
+      - CONSUL_HTTP_ADDR=consul.tools.my_hostname.cl
+      - CONSUL_HTTP_SSL=true
+    secrets:
+      - source: vault_token
+        target: VAULT_TOKEN
+      - source: consul_http_token
+        target: CONSUL_HTTP_TOKEN
+      - source: azure_tenant
+        target: ARM_TENANT_ID
+      - source: azure_subscription
+        target: ARM_SUBSCRIPTION_ID
+      - source: azure_client
+        target: ARM_CLIENT_ID
+      - source: azure_secret
+        target: ARM_CLIENT_SECRET
+
+  import_consul_keys_staging:
+    group: import_consul_keys
+    image: my_hostname.azurecr.io/drone/drone-consul:b-2
+    prefix: cassandra-k8s/staging
+    excludes: terraform-state,ssh-public-key,ssh-deploy-private-key,ssh-deploy-public-key,kube-config-cluster,sealed-secret-key,sealed-secret-certificate
+    consul_port: 443
+    consul_ssl: true
+    consul_addr: consul.tools.my_hostname.cl
+    secrets:
+      - source: consul_http_token
+        target: CONSUL_TOKEN
+    filename: .env_file_staging
+
+  import_consul_keys_production:
+    group: import_consul_keys
+    image: my_hostname.azurecr.io/drone/drone-consul:b-2
+    prefix: cassandra-k8s/production
+    excludes: terraform-state,ssh-public-key,ssh-deploy-private-key,ssh-deploy-public-key,kube-config-cluster,sealed-secret-key,sealed-secret-certificate
+    consul_port: 443
+    consul_ssl: true
+    consul_addr: consul.tools.my_hostname.cl
+    secrets:
+      - source: consul_http_token
+        target: CONSUL_TOKEN
+    filename: .env_file_production
+
+  configure_bastion_staging:
+    image: my_hostname.azurecr.io/drone-ansible:latest
+    pull: true
+    private: false
+    playbook: ansible/configure-bastion.yaml
+    inventory_path: ansible/inventory
+    provider: azure
+    environment:
+      - VAULT_ADDR=https://vault.tools.my_hostname.cl
+      - CONSUL_HTTP_SSL=true
+    env_file: .env_file_staging
+    secrets:
+      - source: azure_tenant
+        target: AZURE_TENANT
+      - source: azure_subscription
+        target: AZURE_SUBSCRIPTION_ID
+      - source: azure_client
+        target: AZURE_CLIENT_ID
+      - source: azure_secret
+        target: AZURE_SECRET
+      - source: consul_http_addr
+        target: CONSUL_HTTP_ADDR
+      - source: consul_http_token
+        target: CONSUL_HTTP_TOKEN
+      - source: ssh_key
+        target: SSH_KEY
+      - source: vault_token
+        target: VAULT_TOKEN
+
+  configure_bastion_production:
+    image: my_hostname.azurecr.io/drone-ansible:latest
+    pull: true
+    private: false
+    playbook: ansible/configure-bastion.yaml
+    inventory_path: ansible/inventory
+    provider: azure
+    environment:
+      - VAULT_ADDR=https://vault.tools.my_hostname.cl
+      - CONSUL_HTTP_SSL=true
+    env_file: .env_file_production
+    secrets:
+      - source: azure_tenant
+        target: AZURE_TENANT
+      - source: azure_subscription
+        target: AZURE_SUBSCRIPTION_ID
+      - source: azure_client
+        target: AZURE_CLIENT_ID
+      - source: azure_secret
+        target: AZURE_SECRET
+      - source: consul_http_addr
+        target: CONSUL_HTTP_ADDR
+      - source: consul_http_token
+        target: CONSUL_HTTP_TOKEN
+      - source: ssh_key
+        target: SSH_KEY
+      - source: vault_token
+        target: VAULT_TOKEN
+
+  configure_nodes_staging:
+    image: my_hostname.azurecr.io/drone-ansible:latest
+    pull: true
+    private: false
+    playbook: ansible/configure-nodes.yaml
+    inventory_path: ansible/inventory
+    provider: azure
+    use_bastion: true
+    consul_path_to_bastion_ip: cassandra-k8s/staging/output/bastion-public-ip
+    environment:
+      - VAULT_ADDR=https://vault.tools.my_hostname.cl
+      - CONSUL_HTTP_SSL=true
+      - REMOTE_USER=ubuntu
+    env_file: .env_file_staging
+    secrets:
+      - source: azure_tenant
+        target: AZURE_TENANT
+      - source: azure_subscription
+        target: AZURE_SUBSCRIPTION_ID
+      - source: azure_client
+        target: AZURE_CLIENT_ID
+      - source: azure_secret
+        target: AZURE_SECRET
+      - source: consul_http_addr
+        target: CONSUL_HTTP_ADDR
+      - source: consul_http_token
+        target: CONSUL_HTTP_TOKEN
+      - source: ssh_key
+        target: SSH_KEY
+      - source: vault_token
+        target: VAULT_TOKEN
+
+  configure_nodes_production:
+    image: my_hostname.azurecr.io/drone-ansible:latest
+    pull: true
+    private: false
+    playbook: ansible/configure-nodes.yaml
+    inventory_path: ansible/inventory
+    provider: azure
+    use_bastion: true
+    consul_path_to_bastion_ip: cassandra-k8s/production/output/bastion-public-ip
+    environment:
+      - VAULT_ADDR=https://vault.tools.my_hostname.cl
+      - CONSUL_HTTP_SSL=true
+      - REMOTE_USER=ubuntu
+    env_file: .env_file_production
+    secrets:
+      - source: azure_tenant
+        target: AZURE_TENANT
+      - source: azure_subscription
+        target: AZURE_SUBSCRIPTION_ID
+      - source: azure_client
+        target: AZURE_CLIENT_ID
+      - source: azure_secret
+        target: AZURE_SECRET
+      - source: consul_http_addr
+        target: CONSUL_HTTP_ADDR
+      - source: consul_http_token
+        target: CONSUL_HTTP_TOKEN
+      - source: ssh_key
+        target: SSH_KEY
+      - source: vault_token
+        target: VAULT_TOKEN
+
+  install_and_bootstrap_k8s_staging:
+    group: ansible
+    image: my_hostname.azurecr.io/drone-ansible:latest
+    pull: true
+    private: false
+    playbook: ansible/k8s.yaml
+    inventory_path: ansible/inventory
+    provider: azure
+    environment:
+      - VAULT_ADDR=https://vault.tools.my_hostname.cl
+      - CONSUL_HTTP_SSL=true
+    env_file: .env_file_staging
+    secrets:
+      - source: azure_tenant
+        target: AZURE_TENANT
+      - source: azure_subscription
+        target: AZURE_SUBSCRIPTION_ID
+      - source: azure_client
+        target: AZURE_CLIENT_ID
+      - source: azure_secret
+        target: AZURE_SECRET
+      - source: consul_http_addr
+        target: CONSUL_HTTP_ADDR
+      - source: consul_http_token
+        target: CONSUL_HTTP_TOKEN
+      - source: ssh_key
+        target: SSH_KEY
+      - source: vault_token
+        target: VAULT_TOKEN
+
+  install_and_bootstrap_k8s_production:
+    group: ansible
+    image: my_hostname.azurecr.io/drone-ansible:latest
+    pull: true
+    private: false
+    playbook: ansible/k8s.yaml
+    inventory_path: ansible/inventory
+    provider: azure
+    environment:
+      - VAULT_ADDR=https://vault.tools.my_hostname.cl
+      - CONSUL_HTTP_SSL=true
+    env_file: .env_file_production
+    secrets:
+      - source: azure_tenant
+        target: AZURE_TENANT
+      - source: azure_subscription
+        target: AZURE_SUBSCRIPTION_ID
+      - source: azure_client
+        target: AZURE_CLIENT_ID
+      - source: azure_secret
+        target: AZURE_SECRET
+      - source: consul_http_addr
+        target: CONSUL_HTTP_ADDR
+      - source: consul_http_token
+        target: CONSUL_HTTP_TOKEN
+      - source: ssh_key
+        target: SSH_KEY
+      - source: vault_token
+        target: VAULT_TOKEN
+
+  routes_staging:
+    image: jmccann/drone-terraform:6.0-0.12.6
+    actions:
+      - plan
+      - apply
+    sensitive: true
+    root_dir: routes
+    init_options:
+      backend-config:
+        - "scheme=https"
+        - "path=cassandra-k8s/staging/terraform/routes/terraform-state"
+        - "datacenter=eastus2"
+    vars:
+      consul_base_path: cassandra-k8s/staging
+    environment:
+      - VAULT_ADDR=https://vault.tools.my_hostname.cl
+      - CONSUL_HTTP_ADDR=consul.tools.my_hostname.cl
+      - CONSUL_HTTP_SSL=true
+    secrets:
+      - source: vault_token
+        target: VAULT_TOKEN
+      - source: consul_http_token
+        target: CONSUL_HTTP_TOKEN
+      - source: azure_tenant
+        target: ARM_TENANT_ID
+      - source: azure_subscription
+        target: ARM_SUBSCRIPTION_ID
+      - source: azure_client
+        target: ARM_CLIENT_ID
+      - source: azure_secret
+        target: ARM_CLIENT_SECRET
+
+  routes_production:
+    image: jmccann/drone-terraform:6.0-0.12.6
+    actions:
+      - plan
+      - apply
+    sensitive: true
+    root_dir: routes
+    init_options:
+      backend-config:
+        - "scheme=https"
+        - "path=cassandra-k8s/production/terraform/routes/terraform-state"
+        - "datacenter=eastus2"
+    vars:
+      consul_base_path: cassandra-k8s/production
+    environment:
+      - VAULT_ADDR=https://vault.tools.my_hostname.cl
+      - CONSUL_HTTP_ADDR=consul.tools.my_hostname.cl
+      - CONSUL_HTTP_SSL=true
+    secrets:
+      - source: vault_token
+        target: VAULT_TOKEN
+      - source: consul_http_token
+        target: CONSUL_HTTP_TOKEN
+      - source: azure_tenant
+        target: ARM_TENANT_ID
+      - source: azure_subscription
+        target: ARM_SUBSCRIPTION_ID
+      - source: azure_client
+        target: ARM_CLIENT_ID
+      - source: azure_secret
+        target: ARM_CLIENT_SECRET

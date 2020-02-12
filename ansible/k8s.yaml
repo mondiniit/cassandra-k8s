@@ -1,0 +1,39 @@
+- hosts: "role_bastion:&cluster_{{ lookup('env','CLUSTER_NAME') }}-{{ lookup('env','ENVIRONMENT') }}-{{ lookup('env','NAME_SUFFIX_REGION_A') }}"
+  become: no
+  remote_user: "ubuntu"
+  vars:
+    vault_token: "{{ lookup('env', 'VAULT_TOKEN') }}"
+    vault_addr: "{{ lookup('env', 'VAULT_ADDR') }}"
+    vault_secret_base_path: "{{ lookup('env', 'VAULT_SECRET_BASE_PATH') }}"
+    cluster_name: "{{ lookup('env', 'CLUSTER_NAME') }}"
+    env: "{{ lookup('env', 'ENVIRONMENT') }}"
+    regions: "{{ lookup('env', 'REGIONS') }}"
+    consul_http_addr: "{{ lookup('env', 'CONSUL_HTTP_ADDR') }}"
+    consul_http_token: "{{ lookup('env', 'CONSUL_HTTP_TOKEN') }}"
+    consul_http_ssl: "{{ lookup('env', 'CONSUL_HTTP_SSL') }}"
+    name_suffixes: "{{ lookup('env', 'NAME_SUFFIX_REGION_A') }},{{ lookup('env', 'NAME_SUFFIX_REGION_B') }}"
+    azure_tenant: "{{ lookup('env', 'AZURE_TENANT') }}"
+    azure_subscription_id: "{{ lookup('env', 'AZURE_SUBSCRIPTION_ID') }}"
+    azure_client_id: "{{ lookup('env', 'AZURE_CLIENT_ID') }}"
+    azure_secret: "{{ lookup('env', 'AZURE_SECRET') }}"
+    kubernetes_version: "{{ lookup('env', 'KUBERNETES_VERSION') }}"
+    service_cluster_ip_ranges: "{{ lookup('env', 'SERVICE_CLUSTER_IP_RANGES') }}"
+    cluster_cidrs: "{{ lookup('env', 'CLUSTER_CIDRS') }}"
+    cluster_dns_servers: "{{ lookup('env', 'CLUSTER_DNS_SERVERS') }}"
+    remote_load_balancer_ips: "{{ lookup('env', 'LOAD_BALANCER_IP_REGION_A') }},{{ lookup('env', 'LOAD_BALANCER_IP_REGION_B') }}"
+    lb_rule_port_cqlsh: "{{ lookup('env', 'LB_RULE_PORT_CQLSH') }}"
+    lb_rule_port_kube_dns: "{{ lookup('env', 'LB_RULE_PORT_KUBE_DNS') }}"
+    lb_rule_port_kube_dns_probe: "{{ lookup('env', 'LB_RULE_PORT_KUBE_DNS_PROBE') }}"
+    root_domain: "{{ lookup('env', 'ROOT_DOMAIN') }}"
+    sealed_secrets_version: "v0.7.0"
+
+# uncomment "create-cluster" role only if you are upgrading the cluster
+  roles:
+    - ssh
+    - create-cluster
+    - helm
+    - flux
+    - helm-operator
+    - cassandra
+    - cluster-cleanup
+    - prometheus-operator

@@ -1,0 +1,5 @@
+- name: Create region namespace
+  shell: "kubectl --context {{ item.context }} get namespace cassandra-{{ item.region }} || kubectl --context {{ item.context }} create namespace cassandra-{{ item.region }}"
+  with_items:
+    - { context: "{{ cluster_name }}-{{ regions.split(',')[0] }}", region: "{{ regions.split(',')[0] }}" }
+    - { context: "{{ cluster_name }}-{{ regions.split(',')[1] }}", region: "{{ regions.split(',')[1] }}" }

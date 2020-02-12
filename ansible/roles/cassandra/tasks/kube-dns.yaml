@@ -1,0 +1,72 @@
+- name: Create manifest to expose kube-dns via k8s service
+  copy:
+    dest: "/home/{{ ansible_user }}/dns-service.yaml"
+    content: |
+      apiVersion: v1
+      kind: Service
+      metadata:
+        annotations:
+          service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+        labels:
+          k8s-app: kube-dns
+        name: kube-dns-lb
+        namespace: kube-system
+      spec:
+        ports:
+        - name: dns
+          port: 53
+          protocol: UDP
+          targetPort: 53
+          nodePort: {{ lb_rule_port_kube_dns }}
+        - name: dns-probe
+          port: 53
+          protocol: TCP
+          targetPort: 53
+          nodePort: {{ lb_rule_port_kube_dns_probe }}
+        selector:
+          k8s-app: kube-dns
+        sessionAffinity: None
+        type: NodePort
+
+- name: Deploy kube-dns service
+  shell: "kubectl --context {{ item }} apply -f dns-service.yaml"
+  with_items:
+    - "{{ cluster_name }}-{{ regions.split(',')[0] }}"
+    - "{{ cluster_name }}-{{ regions.split(',')[1] }}"
+
+- name: Create config map manifest
+  copy:
+    dest: "/home/{{ ansible_user }}/dns-configmap-{{ item.region }}.yaml"
+    content: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: kube-dns
+        namespace: kube-system
+      data:
+        stubDomains: |
+          {"cassandra-{{ item.remote_region }}.svc.cluster.local": ["{{ item.remote_load_balancer_ip }}"]}
+  with_items:
+    - { region: "{{ regions.split(',')[0] }}", remote_region: "{{ regions.split(',')[1] }}", remote_load_balancer_ip: "{{ remote_load_balancer_ips.split(',')[1] }}" }
+    - { region: "{{ regions.split(',')[1] }}", remote_region: "{{ regions.split(',')[0] }}", remote_load_balancer_ip: "{{ remote_load_balancer_ips.split(',')[0] }}" }
+
+- name: Deploy kube-dns config map
+  shell: "kubectl --context {{ item.context }} apply -f dns-configmap-{{ item.region }}.yaml"
+  with_items:
+    - { context: "{{ cluster_name }}-{{ regions.split(',')[0] }}", region: "{{ regions.split(',')[0] }}" }
+    - { context: "{{ cluster_name }}-{{ regions.split(',')[1] }}", region: "{{ regions.split(',')[1] }}" }
+
+- name: Delete current kube-dns pods
+  shell: "kubectl --context {{ item }} delete pods -l k8s-app=kube-dns -n kube-system"
+  with_items:
+    - "{{ cluster_name }}-{{ regions.split(',')[0] }}"
+    - "{{ cluster_name }}-{{ regions.split(',')[1] }}"
+
+- name: Clean up working files
+  file:
+    path: "{{ item }}"
+    state: absent
+  with_items:
+    - dns-service.yaml
+    - dns-configmap-{{ regions.split(',')[0] }}.yaml
+    - dns-configmap-{{ regions.split(',')[1] }}.yaml

@@ -1,0 +1,14 @@
+- hosts: "role_bastion:&cluster_{{ lookup('env','CLUSTER_NAME') }}-{{ lookup('env','ENVIRONMENT') }}-{{ lookup('env','NAME_SUFFIX_REGION_A') }}"
+  become: yes
+  remote_user: "ubuntu"
+  vars:
+    consul_http_addr: "{{ lookup('env', 'CONSUL_HTTP_ADDR') }}"
+    consul_http_token: "{{ lookup('env', 'CONSUL_HTTP_TOKEN') }}"
+    consul_http_ssl: "{{ lookup('env', 'CONSUL_HTTP_SSL') }}"
+    regions: "{{ lookup('env', 'REGIONS') }}"
+    env: "{{ lookup('env', 'ENVIRONMENT') }}"
+    cluster_name: "{{ lookup('env', 'CLUSTER_NAME') }}"
+    name_suffix: "{{ lookup('env', 'NAME_SUFFIX_REGION_B') }}"
+
+  roles:
+    - resolve-hosts

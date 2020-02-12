@@ -1,0 +1,18 @@
+- name: Copy template to bastion
+  copy:
+    src: hosts.tmpl
+    dest: "/home/{{ ansible_user }}/hosts.tmpl"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: 0644
+
+- name: Create hosts file fragment to resolve remote cluster hostnames with consul-template
+  shell: "consul-template -template \"hosts.tmpl:/etc/hosts\" -once -log-level debug -syslog"
+  environment:
+    CONSUL_HTTP_ADDR: "{{ consul_http_addr }}"
+    CONSUL_HTTP_TOKEN: "{{ consul_http_token }}"
+    CONSUL_HTTP_SSL: "{{ consul_http_ssl }}"
+    REGION: "{{ regions.split(',')[1] }}"
+    ENVIRONMENT: "{{ env }}"
+    CLUSTER_NAME: "{{ cluster_name }}"
+    NAME_SUFFIX: "{{ name_suffix }}"

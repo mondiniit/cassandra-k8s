@@ -1,0 +1,179 @@
+- name: Create flux namespace
+  shell: kubectl --context {{ item }} get namespace flux || kubectl --context {{ item }} create namespace flux
+  with_items:
+    - "{{ cluster_name }}-{{ regions.split(',')[0] }}"
+    - "{{ cluster_name }}-{{ regions.split(',')[1] }}"
+
+- name: Copy flux service account
+  copy:
+    dest: "/home/{{ ansible_user }}/flux-service-account.yaml"
+    content: |
+      ---
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        labels:
+          name: flux
+        name: flux
+        namespace: flux
+      ---
+      apiVersion: rbac.authorization.k8s.io/v1beta1
+      kind: ClusterRole
+      metadata:
+        labels:
+          name: flux
+        name: flux
+      rules:
+        - apiGroups: ['*']
+          resources: ['*']
+          verbs: ['*']
+        - nonResourceURLs: ['*']
+          verbs: ['*']
+      ---
+      apiVersion: rbac.authorization.k8s.io/v1beta1
+      kind: ClusterRoleBinding
+      metadata:
+        labels:
+          name: flux
+        name: flux
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: flux
+      subjects:
+        - kind: ServiceAccount
+          name: flux
+          namespace: flux
+
+- name: Delete flux secrets if exists
+  shell: "kubectl --context {{ item }} -n flux get secret flux-git-deploy && kubectl --context {{ item }} -n flux delete secret flux-git-deploy || echo \"secret doesn't exists\""
+  with_items:
+    - "{{ cluster_name }}-{{ regions.split(',')[0] }}"
+    - "{{ cluster_name }}-{{ regions.split(',')[1] }}"
+
+- name: Create flux secrets
+  shell: "kubectl --context {{ item }} -n flux create secret generic flux-git-deploy --from-literal \"identity=$(consul kv get {{ cluster_name }}-k8s/{{ env }}/input/ssh-deploy-private-key)\" --from-literal \"identity.pub=$(consul kv get {{ cluster_name }}-k8s/{{ env }}/input/ssh-deploy-public-key)\""
+  environment:
+    CONSUL_HTTP_ADDR: "{{ consul_http_addr }}"
+    CONSUL_HTTP_TOKEN: "{{ consul_http_token }}"
+    CONSUL_HTTP_SSL: "{{ consul_http_ssl }}"
+  with_items:
+    - "{{ cluster_name }}-{{ regions.split(',')[0] }}"
+    - "{{ cluster_name }}-{{ regions.split(',')[1] }}"
+
+- name: Create flux service account
+  shell: "kubectl --context {{ item }} apply -f flux-service-account.yaml"
+  with_items:
+    - "{{ cluster_name }}-{{ regions.split(',')[0] }}"
+    - "{{ cluster_name }}-{{ regions.split(',')[1] }}"
+
+- name: Copy flux deployment
+  copy:
+    dest: "/home/{{ ansible_user }}/flux-deployment-{{ item }}.yaml"
+    content: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: memcached
+        namespace: flux
+      spec:
+        replicas: 1
+        selector:
+          matchLabels:
+            name: memcached
+        template:
+          metadata:
+            labels:
+              name: memcached
+          spec:
+            containers:
+            - name: memcached
+              image: memcached:1.4.25
+              imagePullPolicy: IfNotPresent
+              args:
+              - -m 64
+              - -p 11211
+              ports:
+              - name: clients
+                containerPort: 11211
+      ---
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: memcached
+        namespace: flux
+      spec:
+        clusterIP: None
+        ports:
+          - name: memcached
+            port: 11211
+        selector:
+          name: memcached
+      ---
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: flux
+        namespace: flux
+      spec:
+        replicas: 1
+        selector:
+          matchLabels:
+            name: flux
+        strategy:
+          type: Recreate
+        template:
+          metadata:
+            annotations:
+              prometheus.io.port: "3031"
+            labels:
+              name: flux
+          spec:
+            serviceAccount: flux
+            volumes:
+            - name: git-key
+              secret:
+                secretName: flux-git-deploy
+                defaultMode: 0400
+            - name: git-keygen
+              emptyDir:
+                medium: Memory
+            containers:
+            - name: flux
+              image: weaveworks/flux:1.12.2
+              imagePullPolicy: IfNotPresent
+              ports:
+              - containerPort: 3030
+              volumeMounts:
+              - name: git-key
+                mountPath: /etc/fluxd/ssh
+                readOnly: true
+              - name: git-keygen
+                mountPath: /var/fluxd/keygen
+              args:
+              - --ssh-keygen-dir=/var/fluxd/keygen
+              - --git-url=git@bitbucket.org:my_hostname/{{ cluster_name }}-k8s.git
+              - --git-branch=master
+              - --listen-metrics=:3031
+              - --git-path=deployments/{{ env }}/{{ item }}
+              - --sync-garbage-collection
+              - --git-ci-skip=true
+              - --git-ci-skip-message=[CI SKIP]
+  with_items:
+    - "{{ regions.split(',')[0] }}"
+    - "{{ regions.split(',')[1] }}"
+
+- name: Create flux deployment
+  shell: "kubectl --context {{ item.context }} apply -f flux-deployment-{{ item.region }}.yaml"
+  with_items:
+    - { context: "{{ cluster_name }}-{{ regions.split(',')[0] }}", region: "{{ regions.split(',')[0] }}" }
+    - { context: "{{ cluster_name }}-{{ regions.split(',')[1] }}", region: "{{ regions.split(',')[1] }}" }
+
+- name: Clean up working files
+  file:
+    path: "{{ item }}"
+    state: absent
+  with_items:
+    - flux-service-account.yaml
+    - flux-deployment-{{ regions.split(',')[0] }}.yaml
+    - flux-deployment-{{ regions.split(',')[1] }}.yaml

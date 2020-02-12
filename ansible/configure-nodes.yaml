@@ -1,0 +1,6 @@
+- hosts: "cluster_{{ lookup('env','CLUSTER_NAME') }}-{{ lookup('env','ENVIRONMENT') }}-{{ lookup('env','NAME_SUFFIX_REGION_A') }}:cluster_{{ lookup('env','CLUSTER_NAME') }}-{{ lookup('env','ENVIRONMENT') }}-{{ lookup('env','NAME_SUFFIX_REGION_B') }}:!role_bastion"
+  become: no
+  remote_user: "ubuntu"
+
+  roles:
+    - install-docker

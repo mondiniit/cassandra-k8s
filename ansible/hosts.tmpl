@@ -1,0 +1,20 @@
+{{$env := (env "ENVIRONMENT") -}}
+{{$region := (env "REGION") -}}
+{{$cluster_name := (env "CLUSTER_NAME") -}}
+{{$name_suffix := (env "NAME_SUFFIX") -}}
+{{$prefix := (printf "%s-k8s" $cluster_name) -}}
+127.0.0.1 localhost
+{{ range $i, $value := key (print $prefix "/" $env "/output/manager-ips-" $region) | split "," -}}
+{{$value}} {{$cluster_name}}-{{$env}}-{{$name_suffix}}-manager{{$i | add 1}}
+{{end -}}
+{{ range $i, $value := key (print $prefix "/" $env "/output/worker-ips-" $region) | split "," -}}
+{{$value}} {{$cluster_name}}-{{$env}}-{{$name_suffix}}-worker{{$i | add 1}}
+{{end -}}
+# The following lines are desirable for IPv6 capable hosts
+::1 ip6-localhost ip6-loopback
+fe00::0 ip6-localnet
+ff00::0 ip6-mcastprefix
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+ff02::3 ip6-allhosts
+

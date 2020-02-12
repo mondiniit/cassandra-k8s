@@ -1,0 +1,43 @@
+{{$env := (env "ENVIRONMENT") -}}
+{{$region := (env "REGION") -}}
+{{$cluster_name := (env "CLUSTER_NAME") -}}
+{{$name_suffix := (env "NAME_SUFFIX") -}}
+{{$prefix := (printf "%s-k8s" $cluster_name) -}}
+nodes:
+  {{ range $i, $value := key (print $prefix "/" $env "/output/manager-ips-" $region) | split "," -}}
+  - address: {{$value}}
+    user: ubuntu
+    role:
+      - controlplane
+      - etcd
+    hostname_override: {{$cluster_name}}-{{$env}}-{{$name_suffix}}-manager{{$i | add 1}}
+  {{end -}}
+  {{ range $i, $value := key (print $prefix "/" $env "/output/worker-ips-" $region) | split "," -}}
+  - address: {{$value}}
+    user: ubuntu
+    role:
+      - worker
+    hostname_override: {{$cluster_name}}-{{$env}}-{{$name_suffix}}-worker{{$i | add 1}}
+  {{end}}
+
+kubernetes_version: {{ (env "KUBERNETES_VERSION") }}
+cluster_name: {{$cluster_name}}-{{$region}}
+
+services:
+  etcd:
+    snapshot: false
+  kube-api:
+    service_cluster_ip_range: {{ (env "SERVICE_CLUSTER_IP_RANGE") }}
+  kube-controller:
+    cluster_cidr: {{ (env "CLUSTER_CIDR") }}
+    service_cluster_ip_range: {{ (env "SERVICE_CLUSTER_IP_RANGE") }}
+  kubelet:
+    cluster_dns_server: {{ (env "CLUSTER_DNS_SERVER") }}
+
+cloud_provider:
+  name: azure
+  azureCloudProvider:
+    tenantId: {{ (env "AZURE_TENANT") }}
+    subscriptionId: {{ (env "AZURE_SUBSCRIPTION_ID") }}
+    aadClientId: {{ (env "AZURE_CLIENT_ID") }}
+    aadClientSecret: {{ (env "AZURE_SECRET") }}

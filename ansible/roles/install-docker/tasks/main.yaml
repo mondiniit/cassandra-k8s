@@ -1,0 +1,25 @@
+- name: Remove docker-ce
+  shell: sudo apt remove -y docker-ce docker-ce-cli
+
+- name: Update Repository
+  shell: sudo apt update
+
+- name: Installing CA Certificates and curl
+  shell: sudo apt install -y apt-transport-https ca-certificates curl software-properties-common
+
+- name: Adding docker key and repository
+  shell: |
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+    sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+
+- name: Apt Update
+  shell:  sudo apt update
+
+- name: Madison Cache
+  shell: sudo apt-cache madison docker-ce
+
+- name: Install Docker CE
+  shell:  sudo apt install docker-ce=5:18.09.8~3-0~ubuntu-xenial docker-ce-cli=5:18.09.8~3-0~ubuntu-xenial -y
+
+- name: Cleanup
+  shell: sudo apt-get autoremove -y
